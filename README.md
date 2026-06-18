@@ -2,6 +2,10 @@
 
 See it [in action](https://adrianartacho.github.io/MusikText/?file=MyBoat9.musicxml&tempo=200&bg=classroom.jpg).
 
+Idee: [Veronika Humpel](https://www.musikschule-simmering.at/unterrichtsfaecher/elementares-musizieren/) ([Musikschule Simmering](https://www.musikschule-simmering.at/), Wien)
+
+Ein einfacher browserbasierter Player für Gesangsmelodien im MusicXML-Format. Die Melodie wird abgespielt, während der Liedtext synchron in großen Rechtecken dargestellt wird.
+
 ---
 
 Ein einfacher browserbasierter Player für Gesangsmelodien im MusicXML-Format. Die Melodie wird abgespielt, während der Liedtext synchron in großen Rechtecken dargestellt wird. Das Projekt ist für GitHub Pages geeignet und benötigt keinen Server.
