@@ -148,6 +148,8 @@
 let events = [];
 let words = [];
 let synth = null;
+let reverb = null;
+let isPlaying = false;
 
 function getUrlParams() {
   return new URLSearchParams(window.location.search);
@@ -188,6 +190,35 @@ async function loadFileFromUrlParam() {
     console.error(err);
     alert(`Could not load INPUT/${fileParam}`);
   }
+}
+
+async function enterFullscreen() {
+  if (!document.fullscreenElement) {
+    try {
+      await document.documentElement.requestFullscreen();
+    } catch (err) {
+      console.warn("Fullscreen request failed:", err);
+    }
+  }
+}
+
+function setupAudio() {
+  if (synth) return;
+
+  reverb = new Tone.Reverb({
+    decay: 2.8,
+    wet: 0.28
+  }).toDestination();
+
+  synth = new Tone.PolySynth(Tone.Synth, {
+    oscillator: { type: "triangle" },
+    envelope: {
+      attack: 0.02,
+      decay: 0.15,
+      sustain: 0.45,
+      release: 0.8
+    }
+  }).connect(reverb);
 }
 
 function pitchToMidi(step, alter, octave) {
@@ -472,16 +503,13 @@ async function parseMusicXML(file) {
   await parseMusicXMLText(text);
 }
 
-document.getElementById("file").addEventListener("change", async e => {
-  await parseMusicXML(e.target.files[0]);
-});
-
-document.getElementById("play").addEventListener("click", async () => {
+async function playMusic() {
   if (!events.length) return;
 
   await Tone.start();
+  await enterFullscreen();
 
-  if (!synth) synth = new Tone.Synth().toDestination();
+  setupAudio();
 
   Tone.Transport.stop();
   Tone.Transport.cancel();
@@ -512,19 +540,42 @@ document.getElementById("play").addEventListener("click", async () => {
     Tone.Transport.loopEnd = totalDuration;
   } else {
     Tone.Transport.schedule(() => {
-      clearActiveWords();
-      Tone.Transport.stop();
+      stopMusic();
     }, totalDuration);
   }
 
   Tone.Transport.start();
-});
+  isPlaying = true;
+}
 
-document.getElementById("stop").addEventListener("click", () => {
+function stopMusic() {
   Tone.Transport.stop();
   Tone.Transport.cancel();
   Tone.Transport.loop = false;
   clearActiveWords();
+  isPlaying = false;
+}
+
+document.getElementById("file").addEventListener("change", async e => {
+  await parseMusicXML(e.target.files[0]);
+});
+
+document.getElementById("play").addEventListener("click", playMusic);
+document.getElementById("stop").addEventListener("click", stopMusic);
+
+document.addEventListener("keydown", async e => {
+  if (e.code !== "Space") return;
+
+  const tag = document.activeElement.tagName.toLowerCase();
+  if (tag === "input" || tag === "textarea" || tag === "button") return;
+
+  e.preventDefault();
+
+  if (isPlaying) {
+    stopMusic();
+  } else {
+    await playMusic();
+  }
 });
 
 window.addEventListener("resize", () => {
