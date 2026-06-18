@@ -35,7 +35,7 @@
       font-size: 1.4rem;
       min-width: 1.5rem;
       text-align: center;
-      transition: background .1s, color .1s, transform .1s;
+      transition: background .1s, color .1s, transform .1s, border-color .1s;
     }
 
     .altTexts {
@@ -60,7 +60,7 @@
 
     .active {
       background: black;
-      color: white;
+      color: white !important;
       transform: scale(1.08);
     }
   </style>
@@ -114,13 +114,26 @@ function getLyricTexts(lyric) {
     .filter(t => t.length > 0);
 }
 
-function appendSyllable(word, texts, eventIndex) {
+function getNoteColor(note) {
+  return (
+    note.getAttribute("color") ||
+    note.querySelector("notehead")?.getAttribute("color") ||
+    note.querySelector("notations")?.getAttribute("color") ||
+    ""
+  );
+}
+
+function appendSyllable(word, texts, eventIndex, noteColor) {
   texts.forEach((text, i) => {
     if (!word.variants[i]) word.variants[i] = "";
     word.variants[i] += text;
   });
 
   word.eventIndexes.push(eventIndex);
+
+  if (!word.color && noteColor) {
+    word.color = noteColor;
+  }
 }
 
 function renderWords() {
@@ -135,6 +148,11 @@ function renderWords() {
     const box = document.createElement("div");
     box.className = "word";
     box.textContent = word.variants[0] || "–";
+
+    if (word.color) {
+      box.style.borderColor = word.color;
+      box.style.color = word.color;
+    }
 
     const altContainer = document.createElement("div");
     altContainer.className = "altTexts";
@@ -191,6 +209,7 @@ document.getElementById("file").addEventListener("change", async e => {
       const lyric = note.querySelector("lyric");
       const syllabic = lyric?.querySelector("syllabic")?.textContent || "single";
       const texts = getLyricTexts(lyric);
+      const noteColor = getNoteColor(note);
 
       const eventIndex = events.length;
 
@@ -198,21 +217,24 @@ document.getElementById("file").addEventListener("change", async e => {
         time,
         duration: durSeconds,
         midi: pitchToMidi(step, alter, octave),
-        texts
+        texts,
+        color: noteColor
       });
 
       if (texts.length) {
         if (syllabic === "single") {
           words.push({
             variants: [...texts],
-            eventIndexes: [eventIndex]
+            eventIndexes: [eventIndex],
+            color: noteColor
           });
         }
 
         else if (syllabic === "begin") {
           currentWord = {
             variants: [...texts],
-            eventIndexes: [eventIndex]
+            eventIndexes: [eventIndex],
+            color: noteColor
           };
         }
 
@@ -220,10 +242,11 @@ document.getElementById("file").addEventListener("change", async e => {
           if (!currentWord) {
             currentWord = {
               variants: [...texts],
-              eventIndexes: [eventIndex]
+              eventIndexes: [eventIndex],
+              color: noteColor
             };
           } else {
-            appendSyllable(currentWord, texts, eventIndex);
+            appendSyllable(currentWord, texts, eventIndex, noteColor);
           }
         }
 
@@ -231,10 +254,11 @@ document.getElementById("file").addEventListener("change", async e => {
           if (!currentWord) {
             currentWord = {
               variants: [...texts],
-              eventIndexes: [eventIndex]
+              eventIndexes: [eventIndex],
+              color: noteColor
             };
           } else {
-            appendSyllable(currentWord, texts, eventIndex);
+            appendSyllable(currentWord, texts, eventIndex, noteColor);
           }
 
           words.push(currentWord);
