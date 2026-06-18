@@ -6,9 +6,16 @@
   <script src="https://unpkg.com/tone@14.8.49/build/Tone.js"></script>
 
   <style>
+    :root {
+      --word-font-size: 48px;
+      --alt-font-size: 24px;
+      --title-font-size: 56px;
+    }
+
     body {
       font-family: sans-serif;
-      padding: 2rem;
+      padding: 1rem 2rem 2rem;
+      margin: 0;
     }
 
     body.hasBackground {
@@ -26,50 +33,72 @@
       pointer-events: none;
     }
 
-    button, input {
-      font-size: 1rem;
-      padding: .4rem .6rem;
-      margin-left: .5rem;
+    #controls {
+      font-size: 0.75rem;
+      margin-bottom: 1rem;
+      display: flex;
+      flex-wrap: wrap;
+      gap: .4rem;
+      align-items: center;
     }
 
-    label { margin-left: .8rem; }
+    #controls input,
+    #controls button {
+      font-size: 0.75rem;
+      padding: .2rem .35rem;
+    }
+
+    #controls input[type="number"] {
+      width: 4.5rem;
+    }
+
+    #scoreTitle {
+      font-size: var(--title-font-size);
+      line-height: 1.05;
+      margin: .4rem 0 1.2rem;
+      text-align: center;
+    }
 
     #lyrics {
       display: flex;
       flex-direction: column;
-      gap: 2rem;
-      margin-top: 2rem;
+      gap: 2.2rem;
+      width: 100%;
     }
 
     .lyricLine {
       display: flex;
-      flex-wrap: wrap;
-      gap: .9rem;
+      flex-wrap: nowrap;
+      gap: .45em;
       align-items: flex-start;
+      justify-content: center;
+      width: 100%;
     }
 
     .wordItem {
       display: flex;
       flex-direction: column;
       align-items: center;
+      flex-shrink: 0;
     }
 
     .word {
-      border: 2px solid black;
-      border-radius: .4rem;
-      padding: .5rem .8rem;
-      font-size: 1.4rem;
-      min-width: 1.5rem;
+      border: 0.08em solid black;
+      border-radius: .35em;
+      padding: .25em .45em;
+      font-size: var(--word-font-size);
+      min-width: 1.2em;
       text-align: center;
       background: rgba(255,255,255,0.85);
       transition: background .1s, color .1s, transform .1s, border-color .1s;
+      line-height: 1.05;
     }
 
     .altTexts {
-      margin-top: .25rem;
+      margin-top: .25em;
       color: #aaa;
-      font-size: 1rem;
-      line-height: 1.15;
+      font-size: var(--alt-font-size);
+      line-height: 1.12;
       text-align: center;
       min-height: 1.1em;
     }
@@ -88,28 +117,30 @@
     .active {
       background: black;
       color: white !important;
-      transform: scale(1.08);
+      transform: scale(1.04);
     }
   </style>
 </head>
 
 <body>
 
+<div id="controls">
+  <input type="file" id="file" accept=".musicxml,.xml">
+  <button id="play">Play</button>
+  <button id="stop">Stop</button>
+
+  <label>
+    Tempo:
+    <input id="tempo" type="number" value="90" min="20" max="300">
+  </label>
+
+  <label>
+    <input id="loop" type="checkbox" checked>
+    Loop
+  </label>
+</div>
+
 <h1 id="scoreTitle">MusicXML Lyric Player</h1>
-
-<input type="file" id="file" accept=".musicxml,.xml">
-<button id="play">Play</button>
-<button id="stop">Stop</button>
-
-<label>
-  Tempo:
-  <input id="tempo" type="number" value="90" min="20" max="300">
-</label>
-
-<label>
-  <input id="loop" type="checkbox" checked>
-  Loop
-</label>
 
 <div id="lyrics"></div>
 
@@ -177,9 +208,14 @@ function wordIndexForEvent(eventIndex) {
 }
 
 function getScoreTitle(xml) {
+  const titleCredit = [...xml.querySelectorAll("credit")]
+    .find(credit => credit.querySelector("credit-type")?.textContent.trim() === "title");
+
+  const printedTitle = titleCredit?.querySelector("credit-words")?.textContent.trim();
+
   return (
+    printedTitle ||
     xml.querySelector("work-title")?.textContent.trim() ||
-    xml.querySelector("credit-words")?.textContent.trim() ||
     "MusicXML Lyric Player"
   );
 }
@@ -222,6 +258,40 @@ function appendSyllable(word, texts, eventIndex, noteColor) {
   if (!word.color && noteColor) {
     word.color = noteColor;
   }
+}
+
+function fitTextToScreen() {
+  if (!words.length) return;
+
+  const root = document.documentElement;
+  const maxWordSize = Math.min(window.innerWidth * 0.12, 96);
+  const minWordSize = 14;
+
+  let low = minWordSize;
+  let high = maxWordSize;
+  let best = minWordSize;
+
+  for (let i = 0; i < 18; i++) {
+    const mid = (low + high) / 2;
+
+    root.style.setProperty("--word-font-size", `${mid}px`);
+    root.style.setProperty("--alt-font-size", `${mid * 0.45}px`);
+    root.style.setProperty("--title-font-size", `${Math.min(mid * 1.15, 72)}px`);
+
+    const lines = [...document.querySelectorAll(".lyricLine")];
+    const fits = lines.every(line => line.scrollWidth <= line.clientWidth + 1);
+
+    if (fits) {
+      best = mid;
+      low = mid;
+    } else {
+      high = mid;
+    }
+  }
+
+  root.style.setProperty("--word-font-size", `${best}px`);
+  root.style.setProperty("--alt-font-size", `${best * 0.45}px`);
+  root.style.setProperty("--title-font-size", `${Math.min(best * 1.15, 72)}px`);
 }
 
 function renderWords() {
@@ -280,6 +350,8 @@ function renderWords() {
 
     lyricsDiv.appendChild(lineDiv);
   }
+
+  requestAnimationFrame(fitTextToScreen);
 }
 
 async function parseMusicXMLText(text) {
@@ -453,6 +525,10 @@ document.getElementById("stop").addEventListener("click", () => {
   Tone.Transport.cancel();
   Tone.Transport.loop = false;
   clearActiveWords();
+});
+
+window.addEventListener("resize", () => {
+  requestAnimationFrame(fitTextToScreen);
 });
 
 applyUrlSettings();
