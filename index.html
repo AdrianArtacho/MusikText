@@ -4,35 +4,71 @@
   <meta charset="utf-8">
   <title>MusicXML Lyric Player</title>
   <script src="https://unpkg.com/tone@14.8.49/build/Tone.js"></script>
+
   <style>
-    body { font-family: sans-serif; padding: 2rem; }
-    #lyrics { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: 2rem; }
+    body {
+      font-family: sans-serif;
+      padding: 2rem;
+    }
+
+    button {
+      font-size: 1rem;
+      padding: .5rem 1rem;
+      margin-left: .5rem;
+    }
+
+    #lyrics {
+      display: flex;
+      flex-wrap: wrap;
+      gap: .5rem;
+      margin-top: 2rem;
+      align-items: center;
+    }
+
     .word {
       border: 2px solid black;
       border-radius: .4rem;
       padding: .5rem .8rem;
       font-size: 1.4rem;
+      min-width: 1.5rem;
+      text-align: center;
+      transition: background .1s, color .1s, transform .1s;
     }
+
     .active {
       background: black;
       color: white;
+      transform: scale(1.08);
     }
   </style>
 </head>
+
 <body>
 
 <h1>MusicXML Lyric Player</h1>
 
 <input type="file" id="file" accept=".musicxml,.xml">
 <button id="play">Play</button>
+<button id="stop">Stop</button>
 
 <div id="lyrics"></div>
 
 <script>
 let events = [];
+let words = [];
+let synth = null;
 
 function pitchToMidi(step, alter, octave) {
-  const base = {C:0, D:2, E:4, F:5, G:7, A:9, B:11}[step];
+  const base = {
+    C: 0,
+    D: 2,
+    E: 4,
+    F: 5,
+    G: 7,
+    A: 9,
+    B: 11
+  }[step];
+
   return 12 * (parseInt(octave) + 1) + base + parseInt(alter || 0);
 }
 
@@ -40,19 +76,43 @@ function midiToFreq(midi) {
   return 440 * Math.pow(2, (midi - 69) / 12);
 }
 
+function clearActiveWords() {
+  document.querySelectorAll(".word").forEach(w => {
+    w.classList.remove("active");
+  });
+}
+
+function wordIndexForEvent(eventIndex) {
+  return words.findIndex(word => word.eventIndexes.includes(eventIndex));
+}
+
+function getTempo(xml) {
+  const soundTempo = xml.querySelector("sound[tempo]")?.getAttribute("tempo");
+  if (soundTempo) return parseFloat(soundTempo);
+
+  const perMinute = xml.querySelector("per-minute")?.textContent;
+  if (perMinute) return parseFloat(perMinute);
+
+  return 90;
+}
+
 document.getElementById("file").addEventListener("change", async e => {
   const text = await e.target.files[0].text();
   const xml = new DOMParser().parseFromString(text, "application/xml");
 
   const divisions = parseFloat(xml.querySelector("divisions")?.textContent || 1);
-  const tempo = 90; // fallback; could also read from MusicXML if present
+  const tempo = getTempo(xml);
   const beatSeconds = 60 / tempo;
 
   events = [];
+  words = [];
+
   let time = 0;
+  let currentWord = null;
 
   xml.querySelectorAll("note").forEach(note => {
     const isRest = note.querySelector("rest");
+    const isChord = note.querySelector("chord");
     const duration = parseFloat(note.querySelector("duration")?.textContent || 1);
     const durSeconds = duration / divisions * beatSeconds;
 
@@ -60,49 +120,122 @@ document.getElementById("file").addEventListener("change", async e => {
       const step = note.querySelector("step").textContent;
       const alter = note.querySelector("alter")?.textContent || 0;
       const octave = note.querySelector("octave").textContent;
-      const lyric = note.querySelector("lyric text")?.textContent || "";
+
+      const lyric = note.querySelector("lyric");
+      const lyricText = lyric?.querySelector("text")?.textContent || "";
+      const syllabic = lyric?.querySelector("syllabic")?.textContent || "single";
+
+      const eventIndex = events.length;
 
       events.push({
         time,
         duration: durSeconds,
         midi: pitchToMidi(step, alter, octave),
-        lyric
+        lyric: lyricText
       });
+
+      if (lyricText) {
+        if (syllabic === "single") {
+          words.push({
+            text: lyricText,
+            eventIndexes: [eventIndex]
+          });
+        }
+
+        else if (syllabic === "begin") {
+          currentWord = {
+            text: lyricText,
+            eventIndexes: [eventIndex]
+          };
+        }
+
+        else if (syllabic === "middle") {
+          if (!currentWord) {
+            currentWord = {
+              text: lyricText,
+              eventIndexes: [eventIndex]
+            };
+          } else {
+            currentWord.text += lyricText;
+            currentWord.eventIndexes.push(eventIndex);
+          }
+        }
+
+        else if (syllabic === "end") {
+          if (!currentWord) {
+            currentWord = {
+              text: lyricText,
+              eventIndexes: [eventIndex]
+            };
+          } else {
+            currentWord.text += lyricText;
+            currentWord.eventIndexes.push(eventIndex);
+          }
+
+          words.push(currentWord);
+          currentWord = null;
+        }
+      }
     }
 
-    time += durSeconds;
+    if (!isChord) {
+      time += durSeconds;
+    }
   });
 
   const lyricsDiv = document.getElementById("lyrics");
   lyricsDiv.innerHTML = "";
 
-  events.forEach((ev, i) => {
+  words.forEach((word, i) => {
     const box = document.createElement("div");
     box.className = "word";
-    box.textContent = ev.lyric || "–";
+    box.textContent = word.text;
     box.id = "word-" + i;
     lyricsDiv.appendChild(box);
   });
 });
 
 document.getElementById("play").addEventListener("click", async () => {
+  if (!events.length) return;
+
   await Tone.start();
 
-  const synth = new Tone.Synth().toDestination();
+  if (!synth) {
+    synth = new Tone.Synth().toDestination();
+  }
 
+  Tone.Transport.stop();
   Tone.Transport.cancel();
   Tone.Transport.position = 0;
 
-  events.forEach((ev, i) => {
+  clearActiveWords();
+
+  events.forEach((ev, eventIndex) => {
     Tone.Transport.schedule(time => {
       synth.triggerAttackRelease(midiToFreq(ev.midi), ev.duration, time);
 
-      document.querySelectorAll(".word").forEach(w => w.classList.remove("active"));
-      document.getElementById("word-" + i)?.classList.add("active");
+      const wordIndex = wordIndexForEvent(eventIndex);
+
+      clearActiveWords();
+      if (wordIndex >= 0) {
+        document.getElementById("word-" + wordIndex)?.classList.add("active");
+      }
     }, ev.time);
   });
 
+  const lastEvent = events[events.length - 1];
+  Tone.Transport.schedule(() => {
+    clearActiveWords();
+    Tone.Transport.stop();
+  }, lastEvent.time + lastEvent.duration + 0.2);
+
   Tone.Transport.start();
+});
+
+document.getElementById("stop").addEventListener("click", () => {
+  Tone.Transport.stop();
+  Tone.Transport.cancel();
+  clearActiveWords();
 });
 </script>
 
