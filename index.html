@@ -8,11 +8,13 @@
   <style>
     body { font-family: sans-serif; padding: 2rem; }
 
-    button {
+    button, input {
       font-size: 1rem;
-      padding: .5rem 1rem;
+      padding: .4rem .6rem;
       margin-left: .5rem;
     }
+
+    label { margin-left: .8rem; }
 
     #lyrics {
       display: flex;
@@ -74,11 +76,21 @@
 
 <body>
 
-<h1>MusicXML Lyric Player</h1>
+<h1 id="scoreTitle">MusicXML Lyric Player</h1>
 
 <input type="file" id="file" accept=".musicxml,.xml">
 <button id="play">Play</button>
 <button id="stop">Stop</button>
+
+<label>
+  Tempo:
+  <input id="tempo" type="number" value="90" min="20" max="300">
+</label>
+
+<label>
+  <input id="loop" type="checkbox" checked>
+  Loop
+</label>
 
 <div id="lyrics"></div>
 
@@ -104,7 +116,18 @@ function wordIndexForEvent(eventIndex) {
   return words.findIndex(word => word.eventIndexes.includes(eventIndex));
 }
 
+function getScoreTitle(xml) {
+  return (
+    xml.querySelector("work-title")?.textContent.trim() ||
+    xml.querySelector("credit-words")?.textContent.trim() ||
+    "MusicXML Lyric Player"
+  );
+}
+
 function getTempo(xml) {
+  const manualTempo = parseFloat(document.getElementById("tempo").value);
+  if (!isNaN(manualTempo)) return manualTempo;
+
   const soundTempo = xml.querySelector("sound[tempo]")?.getAttribute("tempo");
   if (soundTempo) return parseFloat(soundTempo);
 
@@ -199,9 +222,13 @@ function renderWords() {
   }
 }
 
-document.getElementById("file").addEventListener("change", async e => {
-  const text = await e.target.files[0].text();
+async function parseMusicXML(file) {
+  const text = await file.text();
   const xml = new DOMParser().parseFromString(text, "application/xml");
+
+  const title = getScoreTitle(xml);
+  document.getElementById("scoreTitle").textContent = title;
+  document.title = title;
 
   const divisions = parseFloat(xml.querySelector("divisions")?.textContent || 1);
   const tempo = getTempo(xml);
@@ -214,10 +241,14 @@ document.getElementById("file").addEventListener("change", async e => {
   let currentWord = null;
   let currentLine = 0;
 
-  xml.querySelectorAll("measure").forEach(measure => {
+  xml.querySelectorAll("measure").forEach((measure, measureIndex) => {
     const print = measure.querySelector("print");
 
-    if (print?.getAttribute("new-system") === "yes" || print?.getAttribute("new-page") === "yes") {
+    if (
+      measureIndex > 0 &&
+      (print?.getAttribute("new-system") === "yes" ||
+       print?.getAttribute("new-page") === "yes")
+    ) {
       currentLine++;
     }
 
@@ -303,6 +334,10 @@ document.getElementById("file").addEventListener("change", async e => {
   });
 
   renderWords();
+}
+
+document.getElementById("file").addEventListener("change", async e => {
+  await parseMusicXML(e.target.files[0]);
 });
 
 document.getElementById("play").addEventListener("click", async () => {
@@ -315,6 +350,7 @@ document.getElementById("play").addEventListener("click", async () => {
   Tone.Transport.stop();
   Tone.Transport.cancel();
   Tone.Transport.position = 0;
+  Tone.Transport.loop = false;
 
   clearActiveWords();
 
@@ -332,11 +368,18 @@ document.getElementById("play").addEventListener("click", async () => {
   });
 
   const lastEvent = events[events.length - 1];
+  const totalDuration = lastEvent.time + lastEvent.duration + 0.2;
 
-  Tone.Transport.schedule(() => {
-    clearActiveWords();
-    Tone.Transport.stop();
-  }, lastEvent.time + lastEvent.duration + 0.2);
+  if (document.getElementById("loop").checked) {
+    Tone.Transport.loop = true;
+    Tone.Transport.loopStart = 0;
+    Tone.Transport.loopEnd = totalDuration;
+  } else {
+    Tone.Transport.schedule(() => {
+      clearActiveWords();
+      Tone.Transport.stop();
+    }, totalDuration);
+  }
 
   Tone.Transport.start();
 });
@@ -344,6 +387,7 @@ document.getElementById("play").addEventListener("click", async () => {
 document.getElementById("stop").addEventListener("click", () => {
   Tone.Transport.stop();
   Tone.Transport.cancel();
+  Tone.Transport.loop = false;
   clearActiveWords();
 });
 </script>
