@@ -17,7 +17,7 @@
     #lyrics {
       display: flex;
       flex-wrap: wrap;
-      gap: .75rem;
+      gap: .9rem;
       margin-top: 2rem;
       align-items: flex-start;
     }
@@ -49,6 +49,13 @@
 
     .altText {
       display: block;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .altText:hover {
+      color: #555;
+      text-decoration: underline;
     }
 
     .active {
@@ -102,24 +109,58 @@ function getTempo(xml) {
 }
 
 function getLyricTexts(lyric) {
-  const texts = [...(lyric?.querySelectorAll("text") || [])]
-    .map(t => t.textContent.trim());
-
-  return {
-    main: texts[0] || "",
-    alternatives: texts.slice(1)
-  };
+  return [...(lyric?.querySelectorAll("text") || [])]
+    .map(t => t.textContent.trim())
+    .filter(t => t.length > 0);
 }
 
-function appendSyllable(word, mainText, alternatives, eventIndex) {
-  word.text += mainText;
-
-  alternatives.forEach((alt, i) => {
-    if (!word.alternatives[i]) word.alternatives[i] = "";
-    word.alternatives[i] += alt;
+function appendSyllable(word, texts, eventIndex) {
+  texts.forEach((text, i) => {
+    if (!word.variants[i]) word.variants[i] = "";
+    word.variants[i] += text;
   });
 
   word.eventIndexes.push(eventIndex);
+}
+
+function renderWords() {
+  const lyricsDiv = document.getElementById("lyrics");
+  lyricsDiv.innerHTML = "";
+
+  words.forEach((word, wordIndex) => {
+    const item = document.createElement("div");
+    item.className = "wordItem";
+    item.id = "word-" + wordIndex;
+
+    const box = document.createElement("div");
+    box.className = "word";
+    box.textContent = word.variants[0] || "–";
+
+    const altContainer = document.createElement("div");
+    altContainer.className = "altTexts";
+
+    word.variants.slice(1).forEach((altText, altIndex) => {
+      const alt = document.createElement("span");
+      alt.className = "altText";
+      alt.textContent = altText;
+
+      alt.addEventListener("click", () => {
+        const realAltIndex = altIndex + 1;
+
+        const temp = word.variants[0];
+        word.variants[0] = word.variants[realAltIndex];
+        word.variants[realAltIndex] = temp;
+
+        renderWords();
+      });
+
+      altContainer.appendChild(alt);
+    });
+
+    item.appendChild(box);
+    item.appendChild(altContainer);
+    lyricsDiv.appendChild(item);
+  });
 }
 
 document.getElementById("file").addEventListener("change", async e => {
@@ -149,7 +190,7 @@ document.getElementById("file").addEventListener("change", async e => {
 
       const lyric = note.querySelector("lyric");
       const syllabic = lyric?.querySelector("syllabic")?.textContent || "single";
-      const { main, alternatives } = getLyricTexts(lyric);
+      const texts = getLyricTexts(lyric);
 
       const eventIndex = events.length;
 
@@ -157,23 +198,20 @@ document.getElementById("file").addEventListener("change", async e => {
         time,
         duration: durSeconds,
         midi: pitchToMidi(step, alter, octave),
-        lyric: main,
-        alternatives
+        texts
       });
 
-      if (main || alternatives.length) {
+      if (texts.length) {
         if (syllabic === "single") {
           words.push({
-            text: main,
-            alternatives: [...alternatives],
+            variants: [...texts],
             eventIndexes: [eventIndex]
           });
         }
 
         else if (syllabic === "begin") {
           currentWord = {
-            text: main,
-            alternatives: [...alternatives],
+            variants: [...texts],
             eventIndexes: [eventIndex]
           };
         }
@@ -181,24 +219,22 @@ document.getElementById("file").addEventListener("change", async e => {
         else if (syllabic === "middle") {
           if (!currentWord) {
             currentWord = {
-              text: main,
-              alternatives: [...alternatives],
+              variants: [...texts],
               eventIndexes: [eventIndex]
             };
           } else {
-            appendSyllable(currentWord, main, alternatives, eventIndex);
+            appendSyllable(currentWord, texts, eventIndex);
           }
         }
 
         else if (syllabic === "end") {
           if (!currentWord) {
             currentWord = {
-              text: main,
-              alternatives: [...alternatives],
+              variants: [...texts],
               eventIndexes: [eventIndex]
             };
           } else {
-            appendSyllable(currentWord, main, alternatives, eventIndex);
+            appendSyllable(currentWord, texts, eventIndex);
           }
 
           words.push(currentWord);
@@ -210,32 +246,7 @@ document.getElementById("file").addEventListener("change", async e => {
     if (!isChord) time += durSeconds;
   });
 
-  const lyricsDiv = document.getElementById("lyrics");
-  lyricsDiv.innerHTML = "";
-
-  words.forEach((word, i) => {
-    const item = document.createElement("div");
-    item.className = "wordItem";
-    item.id = "word-" + i;
-
-    const box = document.createElement("div");
-    box.className = "word";
-    box.textContent = word.text || "–";
-
-    const altContainer = document.createElement("div");
-    altContainer.className = "altTexts";
-
-    word.alternatives.forEach(altText => {
-      const alt = document.createElement("span");
-      alt.className = "altText";
-      alt.textContent = altText;
-      altContainer.appendChild(alt);
-    });
-
-    item.appendChild(box);
-    item.appendChild(altContainer);
-    lyricsDiv.appendChild(item);
-  });
+  renderWords();
 });
 
 document.getElementById("play").addEventListener("click", async () => {
