@@ -20,8 +20,14 @@
     #lyrics {
       display: flex;
       flex-wrap: wrap;
-      gap: .5rem;
+      gap: .75rem;
       margin-top: 2rem;
+      align-items: flex-start;
+    }
+
+    .wordItem {
+      display: flex;
+      flex-direction: column;
       align-items: center;
     }
 
@@ -33,6 +39,15 @@
       min-width: 1.5rem;
       text-align: center;
       transition: background .1s, color .1s, transform .1s;
+    }
+
+    .altText {
+      margin-top: .25rem;
+      color: #aaa;
+      font-size: 1rem;
+      line-height: 1.1;
+      min-height: 1.1em;
+      text-align: center;
     }
 
     .active {
@@ -96,6 +111,21 @@ function getTempo(xml) {
   return 90;
 }
 
+function getLyricTexts(lyric) {
+  const texts = [...(lyric?.querySelectorAll("text") || [])];
+
+  return {
+    main: texts[0]?.textContent.trim() || "",
+    alt: texts[1]?.textContent.trim() || ""
+  };
+}
+
+function appendToCurrentWord(currentWord, lyricText, altText, eventIndex) {
+  currentWord.text += lyricText;
+  currentWord.altText += altText;
+  currentWord.eventIndexes.push(eventIndex);
+}
+
 document.getElementById("file").addEventListener("change", async e => {
   const text = await e.target.files[0].text();
   const xml = new DOMParser().parseFromString(text, "application/xml");
@@ -122,8 +152,9 @@ document.getElementById("file").addEventListener("change", async e => {
       const octave = note.querySelector("octave").textContent;
 
       const lyric = note.querySelector("lyric");
-      const lyricText = lyric?.querySelector("text")?.textContent || "";
       const syllabic = lyric?.querySelector("syllabic")?.textContent || "single";
+
+      const { main: lyricText, alt: altText } = getLyricTexts(lyric);
 
       const eventIndex = events.length;
 
@@ -131,13 +162,15 @@ document.getElementById("file").addEventListener("change", async e => {
         time,
         duration: durSeconds,
         midi: pitchToMidi(step, alter, octave),
-        lyric: lyricText
+        lyric: lyricText,
+        altLyric: altText
       });
 
-      if (lyricText) {
+      if (lyricText || altText) {
         if (syllabic === "single") {
           words.push({
             text: lyricText,
+            altText: altText,
             eventIndexes: [eventIndex]
           });
         }
@@ -145,6 +178,7 @@ document.getElementById("file").addEventListener("change", async e => {
         else if (syllabic === "begin") {
           currentWord = {
             text: lyricText,
+            altText: altText,
             eventIndexes: [eventIndex]
           };
         }
@@ -153,11 +187,11 @@ document.getElementById("file").addEventListener("change", async e => {
           if (!currentWord) {
             currentWord = {
               text: lyricText,
+              altText: altText,
               eventIndexes: [eventIndex]
             };
           } else {
-            currentWord.text += lyricText;
-            currentWord.eventIndexes.push(eventIndex);
+            appendToCurrentWord(currentWord, lyricText, altText, eventIndex);
           }
         }
 
@@ -165,11 +199,11 @@ document.getElementById("file").addEventListener("change", async e => {
           if (!currentWord) {
             currentWord = {
               text: lyricText,
+              altText: altText,
               eventIndexes: [eventIndex]
             };
           } else {
-            currentWord.text += lyricText;
-            currentWord.eventIndexes.push(eventIndex);
+            appendToCurrentWord(currentWord, lyricText, altText, eventIndex);
           }
 
           words.push(currentWord);
@@ -187,11 +221,22 @@ document.getElementById("file").addEventListener("change", async e => {
   lyricsDiv.innerHTML = "";
 
   words.forEach((word, i) => {
+    const item = document.createElement("div");
+    item.className = "wordItem";
+    item.id = "word-" + i;
+
     const box = document.createElement("div");
     box.className = "word";
-    box.textContent = word.text;
-    box.id = "word-" + i;
-    lyricsDiv.appendChild(box);
+    box.textContent = word.text || "–";
+
+    const alt = document.createElement("div");
+    alt.className = "altText";
+    alt.textContent = word.altText || "";
+
+    item.appendChild(box);
+    item.appendChild(alt);
+
+    lyricsDiv.appendChild(item);
   });
 });
 
@@ -218,7 +263,7 @@ document.getElementById("play").addEventListener("click", async () => {
 
       clearActiveWords();
       if (wordIndex >= 0) {
-        document.getElementById("word-" + wordIndex)?.classList.add("active");
+        document.querySelector("#word-" + wordIndex + " .word")?.classList.add("active");
       }
     }, ev.time);
   });
