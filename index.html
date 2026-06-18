@@ -1,0 +1,110 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>MusicXML Lyric Player</title>
+  <script src="https://unpkg.com/tone@14.8.49/build/Tone.js"></script>
+  <style>
+    body { font-family: sans-serif; padding: 2rem; }
+    #lyrics { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: 2rem; }
+    .word {
+      border: 2px solid black;
+      border-radius: .4rem;
+      padding: .5rem .8rem;
+      font-size: 1.4rem;
+    }
+    .active {
+      background: black;
+      color: white;
+    }
+  </style>
+</head>
+<body>
+
+<h1>MusicXML Lyric Player</h1>
+
+<input type="file" id="file" accept=".musicxml,.xml">
+<button id="play">Play</button>
+
+<div id="lyrics"></div>
+
+<script>
+let events = [];
+
+function pitchToMidi(step, alter, octave) {
+  const base = {C:0, D:2, E:4, F:5, G:7, A:9, B:11}[step];
+  return 12 * (parseInt(octave) + 1) + base + parseInt(alter || 0);
+}
+
+function midiToFreq(midi) {
+  return 440 * Math.pow(2, (midi - 69) / 12);
+}
+
+document.getElementById("file").addEventListener("change", async e => {
+  const text = await e.target.files[0].text();
+  const xml = new DOMParser().parseFromString(text, "application/xml");
+
+  const divisions = parseFloat(xml.querySelector("divisions")?.textContent || 1);
+  const tempo = 90; // fallback; could also read from MusicXML if present
+  const beatSeconds = 60 / tempo;
+
+  events = [];
+  let time = 0;
+
+  xml.querySelectorAll("note").forEach(note => {
+    const isRest = note.querySelector("rest");
+    const duration = parseFloat(note.querySelector("duration")?.textContent || 1);
+    const durSeconds = duration / divisions * beatSeconds;
+
+    if (!isRest && note.querySelector("pitch")) {
+      const step = note.querySelector("step").textContent;
+      const alter = note.querySelector("alter")?.textContent || 0;
+      const octave = note.querySelector("octave").textContent;
+      const lyric = note.querySelector("lyric text")?.textContent || "";
+
+      events.push({
+        time,
+        duration: durSeconds,
+        midi: pitchToMidi(step, alter, octave),
+        lyric
+      });
+    }
+
+    time += durSeconds;
+  });
+
+  const lyricsDiv = document.getElementById("lyrics");
+  lyricsDiv.innerHTML = "";
+
+  events.forEach((ev, i) => {
+    const box = document.createElement("div");
+    box.className = "word";
+    box.textContent = ev.lyric || "–";
+    box.id = "word-" + i;
+    lyricsDiv.appendChild(box);
+  });
+});
+
+document.getElementById("play").addEventListener("click", async () => {
+  await Tone.start();
+
+  const synth = new Tone.Synth().toDestination();
+
+  Tone.Transport.cancel();
+  Tone.Transport.position = 0;
+
+  events.forEach((ev, i) => {
+    Tone.Transport.schedule(time => {
+      synth.triggerAttackRelease(midiToFreq(ev.midi), ev.duration, time);
+
+      document.querySelectorAll(".word").forEach(w => w.classList.remove("active"));
+      document.getElementById("word-" + i)?.classList.add("active");
+    }, ev.time);
+  });
+
+  Tone.Transport.start();
+});
+</script>
+
+</body>
+</html>
