@@ -16,9 +16,15 @@
 
     #lyrics {
       display: flex;
+      flex-direction: column;
+      gap: 2rem;
+      margin-top: 2rem;
+    }
+
+    .lyricLine {
+      display: flex;
       flex-wrap: wrap;
       gap: .9rem;
-      margin-top: 2rem;
       align-items: flex-start;
     }
 
@@ -118,7 +124,6 @@ function getNoteColor(note) {
   return (
     note.getAttribute("color") ||
     note.querySelector("notehead")?.getAttribute("color") ||
-    note.querySelector("notations")?.getAttribute("color") ||
     ""
   );
 }
@@ -140,45 +145,58 @@ function renderWords() {
   const lyricsDiv = document.getElementById("lyrics");
   lyricsDiv.innerHTML = "";
 
-  words.forEach((word, wordIndex) => {
-    const item = document.createElement("div");
-    item.className = "wordItem";
-    item.id = "word-" + wordIndex;
+  const maxLine = Math.max(...words.map(w => w.line), 0);
 
-    const box = document.createElement("div");
-    box.className = "word";
-    box.textContent = word.variants[0] || "–";
+  for (let line = 0; line <= maxLine; line++) {
+    const lineDiv = document.createElement("div");
+    lineDiv.className = "lyricLine";
 
-    if (word.color) {
-      box.style.borderColor = word.color;
-      box.style.color = word.color;
-    }
+    words
+      .filter(word => word.line === line)
+      .forEach(word => {
+        const wordIndex = words.indexOf(word);
 
-    const altContainer = document.createElement("div");
-    altContainer.className = "altTexts";
+        const item = document.createElement("div");
+        item.className = "wordItem";
+        item.id = "word-" + wordIndex;
 
-    word.variants.slice(1).forEach((altText, altIndex) => {
-      const alt = document.createElement("span");
-      alt.className = "altText";
-      alt.textContent = altText;
+        const box = document.createElement("div");
+        box.className = "word";
+        box.textContent = word.variants[0] || "–";
 
-      alt.addEventListener("click", () => {
-        const realAltIndex = altIndex + 1;
+        if (word.color) {
+          box.style.borderColor = word.color;
+          box.style.color = word.color;
+        }
 
-        const temp = word.variants[0];
-        word.variants[0] = word.variants[realAltIndex];
-        word.variants[realAltIndex] = temp;
+        const altContainer = document.createElement("div");
+        altContainer.className = "altTexts";
 
-        renderWords();
+        word.variants.slice(1).forEach((altText, altIndex) => {
+          const alt = document.createElement("span");
+          alt.className = "altText";
+          alt.textContent = altText;
+
+          alt.addEventListener("click", () => {
+            const realAltIndex = altIndex + 1;
+
+            const temp = word.variants[0];
+            word.variants[0] = word.variants[realAltIndex];
+            word.variants[realAltIndex] = temp;
+
+            renderWords();
+          });
+
+          altContainer.appendChild(alt);
+        });
+
+        item.appendChild(box);
+        item.appendChild(altContainer);
+        lineDiv.appendChild(item);
       });
 
-      altContainer.appendChild(alt);
-    });
-
-    item.appendChild(box);
-    item.appendChild(altContainer);
-    lyricsDiv.appendChild(item);
-  });
+    lyricsDiv.appendChild(lineDiv);
+  }
 }
 
 document.getElementById("file").addEventListener("change", async e => {
@@ -194,80 +212,94 @@ document.getElementById("file").addEventListener("change", async e => {
 
   let time = 0;
   let currentWord = null;
+  let currentLine = 0;
 
-  xml.querySelectorAll("note").forEach(note => {
-    const isRest = note.querySelector("rest");
-    const isChord = note.querySelector("chord");
-    const duration = parseFloat(note.querySelector("duration")?.textContent || 1);
-    const durSeconds = duration / divisions * beatSeconds;
+  xml.querySelectorAll("measure").forEach(measure => {
+    const print = measure.querySelector("print");
 
-    if (!isRest && note.querySelector("pitch")) {
-      const step = note.querySelector("step").textContent;
-      const alter = note.querySelector("alter")?.textContent || 0;
-      const octave = note.querySelector("octave").textContent;
-
-      const lyric = note.querySelector("lyric");
-      const syllabic = lyric?.querySelector("syllabic")?.textContent || "single";
-      const texts = getLyricTexts(lyric);
-      const noteColor = getNoteColor(note);
-
-      const eventIndex = events.length;
-
-      events.push({
-        time,
-        duration: durSeconds,
-        midi: pitchToMidi(step, alter, octave),
-        texts,
-        color: noteColor
-      });
-
-      if (texts.length) {
-        if (syllabic === "single") {
-          words.push({
-            variants: [...texts],
-            eventIndexes: [eventIndex],
-            color: noteColor
-          });
-        }
-
-        else if (syllabic === "begin") {
-          currentWord = {
-            variants: [...texts],
-            eventIndexes: [eventIndex],
-            color: noteColor
-          };
-        }
-
-        else if (syllabic === "middle") {
-          if (!currentWord) {
-            currentWord = {
-              variants: [...texts],
-              eventIndexes: [eventIndex],
-              color: noteColor
-            };
-          } else {
-            appendSyllable(currentWord, texts, eventIndex, noteColor);
-          }
-        }
-
-        else if (syllabic === "end") {
-          if (!currentWord) {
-            currentWord = {
-              variants: [...texts],
-              eventIndexes: [eventIndex],
-              color: noteColor
-            };
-          } else {
-            appendSyllable(currentWord, texts, eventIndex, noteColor);
-          }
-
-          words.push(currentWord);
-          currentWord = null;
-        }
-      }
+    if (print?.getAttribute("new-system") === "yes" || print?.getAttribute("new-page") === "yes") {
+      currentLine++;
     }
 
-    if (!isChord) time += durSeconds;
+    measure.querySelectorAll("note").forEach(note => {
+      const isRest = note.querySelector("rest");
+      const isChord = note.querySelector("chord");
+      const duration = parseFloat(note.querySelector("duration")?.textContent || 1);
+      const durSeconds = duration / divisions * beatSeconds;
+
+      if (!isRest && note.querySelector("pitch")) {
+        const step = note.querySelector("step").textContent;
+        const alter = note.querySelector("alter")?.textContent || 0;
+        const octave = note.querySelector("octave").textContent;
+
+        const lyric = note.querySelector("lyric");
+        const syllabic = lyric?.querySelector("syllabic")?.textContent || "single";
+        const texts = getLyricTexts(lyric);
+        const noteColor = getNoteColor(note);
+
+        const eventIndex = events.length;
+
+        events.push({
+          time,
+          duration: durSeconds,
+          midi: pitchToMidi(step, alter, octave),
+          texts,
+          color: noteColor,
+          line: currentLine
+        });
+
+        if (texts.length) {
+          if (syllabic === "single") {
+            words.push({
+              variants: [...texts],
+              eventIndexes: [eventIndex],
+              color: noteColor,
+              line: currentLine
+            });
+          }
+
+          else if (syllabic === "begin") {
+            currentWord = {
+              variants: [...texts],
+              eventIndexes: [eventIndex],
+              color: noteColor,
+              line: currentLine
+            };
+          }
+
+          else if (syllabic === "middle") {
+            if (!currentWord) {
+              currentWord = {
+                variants: [...texts],
+                eventIndexes: [eventIndex],
+                color: noteColor,
+                line: currentLine
+              };
+            } else {
+              appendSyllable(currentWord, texts, eventIndex, noteColor);
+            }
+          }
+
+          else if (syllabic === "end") {
+            if (!currentWord) {
+              currentWord = {
+                variants: [...texts],
+                eventIndexes: [eventIndex],
+                color: noteColor,
+                line: currentLine
+              };
+            } else {
+              appendSyllable(currentWord, texts, eventIndex, noteColor);
+            }
+
+            words.push(currentWord);
+            currentWord = null;
+          }
+        }
+      }
+
+      if (!isChord) time += durSeconds;
+    });
   });
 
   renderWords();
