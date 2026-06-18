@@ -6,10 +6,7 @@
   <script src="https://unpkg.com/tone@14.8.49/build/Tone.js"></script>
 
   <style>
-    body {
-      font-family: sans-serif;
-      padding: 2rem;
-    }
+    body { font-family: sans-serif; padding: 2rem; }
 
     button {
       font-size: 1rem;
@@ -41,13 +38,17 @@
       transition: background .1s, color .1s, transform .1s;
     }
 
-    .altText {
+    .altTexts {
       margin-top: .25rem;
       color: #aaa;
       font-size: 1rem;
-      line-height: 1.1;
-      min-height: 1.1em;
+      line-height: 1.15;
       text-align: center;
+      min-height: 1.1em;
+    }
+
+    .altText {
+      display: block;
     }
 
     .active {
@@ -74,16 +75,7 @@ let words = [];
 let synth = null;
 
 function pitchToMidi(step, alter, octave) {
-  const base = {
-    C: 0,
-    D: 2,
-    E: 4,
-    F: 5,
-    G: 7,
-    A: 9,
-    B: 11
-  }[step];
-
+  const base = { C:0, D:2, E:4, F:5, G:7, A:9, B:11 }[step];
   return 12 * (parseInt(octave) + 1) + base + parseInt(alter || 0);
 }
 
@@ -92,9 +84,7 @@ function midiToFreq(midi) {
 }
 
 function clearActiveWords() {
-  document.querySelectorAll(".word").forEach(w => {
-    w.classList.remove("active");
-  });
+  document.querySelectorAll(".word").forEach(w => w.classList.remove("active"));
 }
 
 function wordIndexForEvent(eventIndex) {
@@ -112,18 +102,24 @@ function getTempo(xml) {
 }
 
 function getLyricTexts(lyric) {
-  const texts = [...(lyric?.querySelectorAll("text") || [])];
+  const texts = [...(lyric?.querySelectorAll("text") || [])]
+    .map(t => t.textContent.trim());
 
   return {
-    main: texts[0]?.textContent.trim() || "",
-    alt: texts[1]?.textContent.trim() || ""
+    main: texts[0] || "",
+    alternatives: texts.slice(1)
   };
 }
 
-function appendToCurrentWord(currentWord, lyricText, altText, eventIndex) {
-  currentWord.text += lyricText;
-  currentWord.altText += altText;
-  currentWord.eventIndexes.push(eventIndex);
+function appendSyllable(word, mainText, alternatives, eventIndex) {
+  word.text += mainText;
+
+  alternatives.forEach((alt, i) => {
+    if (!word.alternatives[i]) word.alternatives[i] = "";
+    word.alternatives[i] += alt;
+  });
+
+  word.eventIndexes.push(eventIndex);
 }
 
 document.getElementById("file").addEventListener("change", async e => {
@@ -153,8 +149,7 @@ document.getElementById("file").addEventListener("change", async e => {
 
       const lyric = note.querySelector("lyric");
       const syllabic = lyric?.querySelector("syllabic")?.textContent || "single";
-
-      const { main: lyricText, alt: altText } = getLyricTexts(lyric);
+      const { main, alternatives } = getLyricTexts(lyric);
 
       const eventIndex = events.length;
 
@@ -162,23 +157,23 @@ document.getElementById("file").addEventListener("change", async e => {
         time,
         duration: durSeconds,
         midi: pitchToMidi(step, alter, octave),
-        lyric: lyricText,
-        altLyric: altText
+        lyric: main,
+        alternatives
       });
 
-      if (lyricText || altText) {
+      if (main || alternatives.length) {
         if (syllabic === "single") {
           words.push({
-            text: lyricText,
-            altText: altText,
+            text: main,
+            alternatives: [...alternatives],
             eventIndexes: [eventIndex]
           });
         }
 
         else if (syllabic === "begin") {
           currentWord = {
-            text: lyricText,
-            altText: altText,
+            text: main,
+            alternatives: [...alternatives],
             eventIndexes: [eventIndex]
           };
         }
@@ -186,24 +181,24 @@ document.getElementById("file").addEventListener("change", async e => {
         else if (syllabic === "middle") {
           if (!currentWord) {
             currentWord = {
-              text: lyricText,
-              altText: altText,
+              text: main,
+              alternatives: [...alternatives],
               eventIndexes: [eventIndex]
             };
           } else {
-            appendToCurrentWord(currentWord, lyricText, altText, eventIndex);
+            appendSyllable(currentWord, main, alternatives, eventIndex);
           }
         }
 
         else if (syllabic === "end") {
           if (!currentWord) {
             currentWord = {
-              text: lyricText,
-              altText: altText,
+              text: main,
+              alternatives: [...alternatives],
               eventIndexes: [eventIndex]
             };
           } else {
-            appendToCurrentWord(currentWord, lyricText, altText, eventIndex);
+            appendSyllable(currentWord, main, alternatives, eventIndex);
           }
 
           words.push(currentWord);
@@ -212,9 +207,7 @@ document.getElementById("file").addEventListener("change", async e => {
       }
     }
 
-    if (!isChord) {
-      time += durSeconds;
-    }
+    if (!isChord) time += durSeconds;
   });
 
   const lyricsDiv = document.getElementById("lyrics");
@@ -229,13 +222,18 @@ document.getElementById("file").addEventListener("change", async e => {
     box.className = "word";
     box.textContent = word.text || "–";
 
-    const alt = document.createElement("div");
-    alt.className = "altText";
-    alt.textContent = word.altText || "";
+    const altContainer = document.createElement("div");
+    altContainer.className = "altTexts";
+
+    word.alternatives.forEach(altText => {
+      const alt = document.createElement("span");
+      alt.className = "altText";
+      alt.textContent = altText;
+      altContainer.appendChild(alt);
+    });
 
     item.appendChild(box);
-    item.appendChild(alt);
-
+    item.appendChild(altContainer);
     lyricsDiv.appendChild(item);
   });
 });
@@ -245,9 +243,7 @@ document.getElementById("play").addEventListener("click", async () => {
 
   await Tone.start();
 
-  if (!synth) {
-    synth = new Tone.Synth().toDestination();
-  }
+  if (!synth) synth = new Tone.Synth().toDestination();
 
   Tone.Transport.stop();
   Tone.Transport.cancel();
@@ -269,6 +265,7 @@ document.getElementById("play").addEventListener("click", async () => {
   });
 
   const lastEvent = events[events.length - 1];
+
   Tone.Transport.schedule(() => {
     clearActiveWords();
     Tone.Transport.stop();
