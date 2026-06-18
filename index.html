@@ -6,7 +6,25 @@
   <script src="https://unpkg.com/tone@14.8.49/build/Tone.js"></script>
 
   <style>
-    body { font-family: sans-serif; padding: 2rem; }
+    body {
+      font-family: sans-serif;
+      padding: 2rem;
+    }
+
+    body.hasBackground {
+      background-size: cover;
+      background-position: center;
+      background-attachment: fixed;
+    }
+
+    body.hasBackground::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      background: rgba(255,255,255,0.72);
+      z-index: -1;
+      pointer-events: none;
+    }
 
     button, input {
       font-size: 1rem;
@@ -43,6 +61,7 @@
       font-size: 1.4rem;
       min-width: 1.5rem;
       text-align: center;
+      background: rgba(255,255,255,0.85);
       transition: background .1s, color .1s, transform .1s, border-color .1s;
     }
 
@@ -98,6 +117,47 @@
 let events = [];
 let words = [];
 let synth = null;
+
+function getUrlParams() {
+  return new URLSearchParams(window.location.search);
+}
+
+function applyUrlSettings() {
+  const params = getUrlParams();
+
+  const tempoParam = params.get("tempo");
+  if (tempoParam) {
+    document.getElementById("tempo").value = tempoParam;
+  }
+
+  const bgParam = params.get("bg");
+  if (bgParam) {
+    document.body.classList.add("hasBackground");
+    document.body.style.backgroundImage = `url("bg/${encodeURIComponent(bgParam)}")`;
+  }
+}
+
+async function loadFileFromUrlParam() {
+  const params = getUrlParams();
+  const fileParam = params.get("file");
+
+  if (!fileParam) return;
+
+  try {
+    const response = await fetch(`INPUT/${encodeURIComponent(fileParam)}`);
+
+    if (!response.ok) {
+      alert(`Could not load INPUT/${fileParam}`);
+      return;
+    }
+
+    const text = await response.text();
+    await parseMusicXMLText(text);
+  } catch (err) {
+    console.error(err);
+    alert(`Could not load INPUT/${fileParam}`);
+  }
+}
 
 function pitchToMidi(step, alter, octave) {
   const base = { C:0, D:2, E:4, F:5, G:7, A:9, B:11 }[step];
@@ -222,8 +282,7 @@ function renderWords() {
   }
 }
 
-async function parseMusicXML(file) {
-  const text = await file.text();
+async function parseMusicXMLText(text) {
   const xml = new DOMParser().parseFromString(text, "application/xml");
 
   const title = getScoreTitle(xml);
@@ -336,6 +395,11 @@ async function parseMusicXML(file) {
   renderWords();
 }
 
+async function parseMusicXML(file) {
+  const text = await file.text();
+  await parseMusicXMLText(text);
+}
+
 document.getElementById("file").addEventListener("change", async e => {
   await parseMusicXML(e.target.files[0]);
 });
@@ -390,6 +454,9 @@ document.getElementById("stop").addEventListener("click", () => {
   Tone.Transport.loop = false;
   clearActiveWords();
 });
+
+applyUrlSettings();
+loadFileFromUrlParam();
 </script>
 
 </body>
